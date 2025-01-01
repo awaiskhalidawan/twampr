@@ -26,7 +26,7 @@ Below are the steps to to build the software.
 
 # Run
 Below are the steps to run the TWAMP client.
-`.\twampr.exe <mode> <twamp_server_ip> <twamp_server_port> <local_ip> <twamp_test_packet_size> <number_of_twamp_test_packets> <interpacket_interval_ms>`
+`.\twampr <mode> <twamp_server_ip> <twamp_server_port> <local_ip> <twamp_test_packet_size> <number_of_twamp_test_packets> <interpacket_interval_ms>`
 
 Example: `.\twampr -c 127.0.0.1 50000 127.0.0.1 300 10 100`
 
