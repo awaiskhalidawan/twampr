@@ -19,9 +19,10 @@ The TWAMP client is thoroughly tested with an already existing TWAMP server writ
 # Build
 Below are the steps to to build the software.
 
-1. cd <repo_path>
-2. cargo build
-(The binary will be generated in <repo_path>\target\debug folder.)
+1. git clone git@github.com:awaiskhalidawan/twampr.git
+2. cd twampr
+3. cargo build
+(The binary will be generated in .\twampr\target\debug folder).
 
 # Run
 Below are the steps to run the TWAMP client.
