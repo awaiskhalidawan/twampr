@@ -1,12 +1,15 @@
+use crate::twamp_defs::*;
 use chrono::Utc;
 use std::io::prelude::*;
 use std::mem;
 use std::net::Ipv4Addr;
 use std::net::TcpStream;
 use std::time::Duration;
-use crate::twamp_defs::*;
 
-pub fn connect_to_server(twamp_server_ip: String, twamp_server_port: u16) -> Result<TcpStream, String> {
+pub fn connect_to_server(
+    twamp_server_ip: String,
+    twamp_server_port: u16,
+) -> Result<TcpStream, String> {
     // Creating a TCP connection to TWAMP Server.
     let socket = TcpStream::connect((twamp_server_ip, twamp_server_port));
 
@@ -41,19 +44,19 @@ pub fn connect_to_server(twamp_server_ip: String, twamp_server_port: u16) -> Res
         .read(&mut read_buffer)
         .expect("Failed to read data from the TWAMP Server ... ");
 
-    // The bytes received must be equal to GreetingMessage size.
-    if bytes_received != mem::size_of::<GreetingMessage>() {
+    // The bytes received must be equal to TwampMessageServerGreeting size.
+    if bytes_received != mem::size_of::<TwampMessageServerGreeting>() {
         return Err(
             "Invalid Greeting Message size received from the TWAMP Server ... ".to_string(),
         );
     }
 
-    // Read the data into GreetingMessage struct.
+    // Read the data into TwampMessageServerGreeting struct.
     let greeting_message =
-        GreetingMessage::from_bytes(&read_buffer).expect("Failed to parse greeting message ... ");
+    TwampMessageServerGreeting::from_bytes(&read_buffer).expect("Failed to parse server greeting message ... ");
 
     println!(
-        "Greeting Message received from TWAMP Server: {:?}",
+        "Server Greeting message received from TWAMP Server: {:?}",
         greeting_message
     );
 

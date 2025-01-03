@@ -1,8 +1,6 @@
 use std::mem;
+use std::net::TcpStream;
 
-pub const TWAMP_CONTROL_MODE_UNAUTHENTICATED: u8 = 0x01;
-pub const TWAMP_CONTROL_MODE_AUTHENTICATED: u8 = 0x02;
-pub const TWAMP_CONTROL_MODE_ENCRYPTED: u8 = 0x04;
 pub const TWAMP_CONTROL_PROTOCOL_PACKET_TYPE_REQUEST_SESSION: u8 = 0x05;
 pub const TWAMP_CONTROL_PROTOCOL_PACKET_TYPE_START_SESSION: u8 = 0x02;
 pub const TWAMP_CONTROL_PROTOCOL_PACKET_TYPE_STOP_SESSION: u8 = 0x03;
@@ -17,30 +15,41 @@ pub const MAX_INTERPACKET_INTERVAL: u16 = 100;        // Interpacket interval in
 pub const TWAMP_TEST_PACKET_RX_WAIT_TIME_MS: u16 = 5000;   // Waiting for test packets to be received in milliseconds.
 
 #[derive(Debug)]
-pub struct GreetingMessage {
-    unused: [u8; 12],
+pub struct TwampMessageServerGreeting {
+    pub unused: [u8; 12],
     pub modes: [u8; 4],
-    challange: [u8; 16],
-    salt: [u8; 16],
-    count: u32,
-    mbz: [u8; 12]
+    pub challenge: [u8; 16],
+    pub salt: [u8; 16],
+    pub count: u32,
+    pub mbz: [u8; 12]
 }
 
-impl GreetingMessage {    
-    // Method to parse bytes into GreetingMessage
+impl TwampMessageServerGreeting {    
+    // Method to parse bytes into TwampMessageServerGreeting
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
-        if bytes.len() < mem::size_of::<GreetingMessage>() {
+        if bytes.len() < mem::size_of::<TwampMessageServerGreeting>() {
             return Err("Invalid bytes array length. ".to_string());
         }
 
         Ok(Self {
             unused: bytes[0..12].try_into().unwrap(),
             modes: bytes[12..16].try_into().unwrap(),
-            challange: bytes[16..32].try_into().unwrap(),
+            challenge: bytes[16..32].try_into().unwrap(),
             salt: bytes[32..48].try_into().unwrap(),
             count: u32::from_be_bytes(bytes[48..52].try_into().unwrap()),
             mbz: bytes[52..64].try_into().unwrap(),
         })
+    }
+
+    pub fn to_bytes(&self) -> [u8; std::mem::size_of::<TwampMessageServerGreeting>()] {
+        let mut bytes = [0u8; std::mem::size_of::<TwampMessageServerGreeting>()];
+        bytes[0..12].copy_from_slice(&self.unused);
+        bytes[12..16].copy_from_slice(&self.modes);
+        bytes[16..32].copy_from_slice(&self.challenge);
+        bytes[32..48].copy_from_slice(&self.salt);
+        bytes[48..52].copy_from_slice(&self.count.to_be_bytes());
+        bytes[52..64].copy_from_slice(&self.mbz);
+        bytes
     }
 }
 
@@ -62,9 +71,22 @@ impl TwampMessageSetupResponse {
         bytes[148..164].copy_from_slice(&self.client_iv);
         bytes
     }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+        if bytes.len() < mem::size_of::<TwampMessageSetupResponse>() {
+            return Err("Invalid bytes array length. ".to_string());
+        }
+
+        Ok(Self {
+            mode: bytes[0..4].try_into().unwrap(),
+            key_id: bytes[4..84].try_into().unwrap(),
+            token: bytes[84..148].try_into().unwrap(),
+            client_iv: bytes[148..164].try_into().unwrap()
+        })
+    }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct TwampTime {
     pub seconds: u32,
     pub fraction: u32
@@ -132,6 +154,16 @@ impl TwampMessageServerStart {
             },
             mbz_: bytes[40..48].try_into().unwrap(),
         })
+    }
+
+    pub fn to_bytes(&self) -> [u8; std::mem::size_of::<TwampMessageServerStart>()] {
+        let mut bytes = [0u8; std::mem::size_of::<TwampMessageServerStart>()];
+        bytes[0..15].copy_from_slice(&self.mbz);
+        bytes[15] = self.accept;
+        bytes[16..32].copy_from_slice(&self.server_iv);
+        bytes[32..40].copy_from_slice(&self.start_time.to_bytes());
+        bytes[40..48].copy_from_slice(&self.mbz_);
+        bytes
     }
 }
 
@@ -389,3 +421,27 @@ impl TwampTestPacketStats {
         }
     }
 }
+
+#[derive(PartialEq)]
+pub enum ControlRequestState {
+    Undefined = -1,
+    ConnectionInvalid,
+    RequestReceived,
+    GreetingMessageSent,
+    ControlConnectionSetupComplete,
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum TwampControlMode {
+    Unauthenticated = 1,
+    Authenticated = 2,
+    Encrypted = 4
+}
+
+pub struct ControlRequest {
+    pub tcp_stream: TcpStream,
+    pub state: ControlRequestState,
+    pub twamp_control_mode: TwampControlMode
+}
+
+

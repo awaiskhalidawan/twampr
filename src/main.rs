@@ -1,10 +1,15 @@
-mod twamp_defs;
 mod twamp_client;
+mod twamp_defs;
+mod twamp_server;
 
 use std::env;
 use std::net::Ipv4Addr;
-use twamp_defs::*;
+use std::net::{IpAddr, TcpListener, TcpStream};
+use std::time::Duration;
 use twamp_client::{connect_to_server, request_tw_session, start_session, stop_session};
+use twamp_defs::*;
+use twamp_server::handle_client;
+use std::sync::mpsc::TryRecvError;
 
 fn main() {
     // Collect the command-line arguments into a vector
@@ -126,7 +131,100 @@ fn main() {
 
         println!("TWAMP test completed successfully ... ");
     } else if twamp_mode == "-s" {
-        println!("TWAMP server mode is not implemented yet. Will be available soon. ");
+        // Check the number of command-line arguments.
+        if args.len() != 3 {
+            println!("Invalid number of arguments ... ");
+            println!("Usage: twampr <mode> <local_port>");
+            return;
+        }
+
+        let local_port = args[2].parse::<u16>().expect("Invalid Local Port ... ");
+
+        // Create a TCP listener on any Ip address and specific port.
+        let listener = TcpListener::bind((IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), local_port))
+            .expect("TWAMP server start failed: Unable to bind to address ... ");
+
+        // Print the server details.
+        println!("TWAMP server started on port:{} ... ", local_port);
+
+        // Get the server start time.
+        let server_start_time = TwampTime::get_current_time_twamp_format();
+
+        // Create a vector to store the control requests.
+        let mut control_requests: Vec<ControlRequest> = Vec::new();
+
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        // Start a thread to handle the incoming connections.
+        let tcp_handler = std::thread::spawn(move || {
+            
+            let mut buffer: [u8; 1024] = [0; 1024];
+            loop {
+                let res: Result<TcpStream, TryRecvError> = rx.try_recv();
+                match res {
+                    Ok(stream) => {
+                        stream.set_read_timeout(Some(Duration::from_millis(50))).unwrap();
+                        let control_request = ControlRequest {
+                            tcp_stream: stream,
+                            state: ControlRequestState::RequestReceived,
+                            twamp_control_mode: TwampControlMode::Unauthenticated,
+                        };
+
+                        control_requests.push(control_request);
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => (),
+                    Err(e) => {
+                        // Print the error message.
+                        println!(
+                            "Unable to receive TCP stream object from main thread. Error: {} ... ",
+                            e
+                        );
+                    }
+                }
+
+                for control_request in control_requests.iter_mut() {
+                    let res = handle_client(control_request, &mut buffer, &server_start_time);
+                    match res {
+                        Ok(_) => (),
+                        Err(e) => {
+                            // Print the error message.
+                            println!("Error: {} ... ", e);
+                        }
+                    }
+                }
+
+                // Remove control request from the vector if client connection becomes invalid.
+                control_requests.retain(|control_request| {
+                    control_request.state != ControlRequestState::ConnectionInvalid
+                });
+
+                // Save CPU cycles.
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+        });
+
+        // Accept incoming connections.
+        for stream in listener.incoming() {
+            match stream {
+                Ok(stream) => {
+                    // Print the client details.
+                    println!("Client connected from {} ... ", stream.peer_addr().unwrap());
+
+                    let res = tx.send(stream);
+                    match res {
+                        Ok(_) => (),
+                        Err(e) => {
+                            // Print the error message.
+                            println!("Unable to send TCP stream object to tcp handler thread. Error: {} ... ", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    // Print the error message.
+                    println!("Error: {} ... ", e);
+                }
+            }
+        }
     } else {
         panic!("Invalid mode. Use -h for help ... ");
     }
