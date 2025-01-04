@@ -6,7 +6,9 @@ pub fn handle_client(control_request: &mut ControlRequest, buffer: &mut [u8; 102
         ControlRequestState::Undefined => {
             return Err("Undefined control request state.".to_string());
         },
-        ControlRequestState::ConnectionInvalid => (),
+        ControlRequestState::ConnectionInvalid => {
+            return Err(format!("The client in connection invalid should have been removed from the list already. "));
+        },
         ControlRequestState::RequestReceived => {
             // Send the greeting message to client.
             let mut server_greeting_message = TwampMessageServerGreeting {
@@ -14,7 +16,7 @@ pub fn handle_client(control_request: &mut ControlRequest, buffer: &mut [u8; 102
                 modes: [0; 4],
                 challenge: [0; 16],
                 salt: [0; 16],
-                count: (1 << 12),
+                count: 4096,
                 mbz: [0; 12]
             };
 
@@ -85,11 +87,40 @@ pub fn handle_client(control_request: &mut ControlRequest, buffer: &mut [u8; 102
                 },
                 Err(e) => {
                     control_request.state = ControlRequestState::ConnectionInvalid;
-                    return Err(format!("Unable to read client greeting message. Error: {} ... ", e));
+                    return Err(format!("Unable to read setup response message. Error: {} ... ", e));
                 }
             }
         },
-        ControlRequestState::ControlConnectionSetupComplete => ()
+        ControlRequestState::ControlConnectionSetupComplete => {
+            // Try to receive the response from client.
+            let res = control_request.tcp_stream.read(buffer);
+            let mut bytes_received: usize = 0;
+            match res {
+                Ok(bytes_read) => {
+                    if bytes_read == 0 {
+                        control_request.state = ControlRequestState::ConnectionInvalid;
+                        return Err(format!("No response received from client against server start message. "));
+                    }
+                    bytes_received = bytes_read;
+                },
+                Err(e) => {
+                    control_request.state = ControlRequestState::ConnectionInvalid;
+                    return Err(format!("Unable to read session control message. Error: {} ... ", e));
+                }
+            }
+
+            let first_octet = buffer[0];
+            
+            if first_octet == TwampControlPacketType::RequestSession as u8 {
+                
+            } else if first_octet == TwampControlPacketType::StartSession as u8 {
+
+            } else if first_octet == TwampControlPacketType::StopSession as u8 {
+                
+            } else {
+                return Err(format!("Invalid Twamp control packet type received: {}", first_octet));
+            }
+        }
     };
 
     Ok(())

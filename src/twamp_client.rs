@@ -123,7 +123,7 @@ pub fn request_tw_session(tcp_stream: &mut TcpStream, local_ip: &Ipv4Addr) -> Re
 
     // Create a TwampMessageRequestSession message and send it to TWAMP server.
     let twamp_message_request_session = TwampMessageRequestSession {
-        first_octet: TWAMP_CONTROL_PROTOCOL_PACKET_TYPE_REQUEST_SESSION,
+        first_octet: TwampControlPacketType::RequestSession as u8,
         ipvn_mbz: 0,
         conf_sender: 0,
         conf_receiver: 0,
@@ -210,7 +210,7 @@ pub fn start_session(
 
     // Create TwampMessageStartSession message and send it to TWAMP server.
     let twamp_message_start_sessions = TwampMessageStartSessions {
-        first_octet: TWAMP_CONTROL_PROTOCOL_PACKET_TYPE_START_SESSION,
+        first_octet: TwampControlPacketType::StartSession as u8,
         mbz: [0; 15],
         hwmac: [0; 16],
     };
@@ -284,7 +284,7 @@ pub fn stop_session(tcp_stream: &mut TcpStream) -> Result<(), String> {
     }
 
     let twamp_message_stop_sessions = TwampMessageStopSessions {
-        first_octet: TWAMP_CONTROL_PROTOCOL_PACKET_TYPE_STOP_SESSION,
+        first_octet: TwampControlPacketType::StopSession as u8,
         accept: 0,
         mbz: [0; 2],
         number_of_sessions: 1,

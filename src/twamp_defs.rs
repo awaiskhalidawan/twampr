@@ -1,9 +1,6 @@
 use std::mem;
 use std::net::TcpStream;
 
-pub const TWAMP_CONTROL_PROTOCOL_PACKET_TYPE_REQUEST_SESSION: u8 = 0x05;
-pub const TWAMP_CONTROL_PROTOCOL_PACKET_TYPE_START_SESSION: u8 = 0x02;
-pub const TWAMP_CONTROL_PROTOCOL_PACKET_TYPE_STOP_SESSION: u8 = 0x03;
 pub const SESSION_SENDER_LOCAL_PORT: u16 = 7400;
 pub const SESSION_SENDER_REMOTE_PORT: u16 = 7400;
 
@@ -436,6 +433,13 @@ pub enum TwampControlMode {
     Unauthenticated = 1,
     Authenticated = 2,
     Encrypted = 4
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum TwampControlPacketType {
+    RequestSession = 5,
+    StartSession = 2,
+    StopSession = 3
 }
 
 pub struct ControlRequest {
