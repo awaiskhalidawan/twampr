@@ -114,6 +114,17 @@ impl TwampTime {
         bytes
     }
 
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+        if bytes.len() < std::mem::size_of::<TwampTime>() {
+            return Err("Invalid bytes array length. ".to_string());
+        }
+
+        Ok(Self {
+            seconds: u32::from_be_bytes(bytes[0..4].try_into().unwrap()),
+            fraction: u32::from_be_bytes(bytes[4..8].try_into().unwrap()),
+        })
+    }
+
     pub fn convert_twamp_time_to_epoch_time(&self) -> i64 {
         if self.seconds < 2208988800 {
             return 0;
@@ -212,16 +223,48 @@ impl TwampMessageRequestSession {
         bytes[96..112].copy_from_slice(&self.hwmac);
         bytes
     }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+        if bytes.len() < mem::size_of::<TwampMessageRequestSession>() {
+            return Err("Invalid bytes array length. ".to_string());
+        }
+
+        Ok(Self {
+            first_octet: bytes[0],
+            ipvn_mbz: bytes[1],
+            conf_sender: bytes[2],
+            conf_receiver: bytes[3],
+            schedule_slots: u32::from_be_bytes(bytes[4..8].try_into().unwrap()),
+            packets: u32::from_be_bytes(bytes[8..12].try_into().unwrap()),
+            sender_port: u16::from_be_bytes(bytes[12..14].try_into().unwrap()),
+            receiver_port: u16::from_be_bytes(bytes[14..16].try_into().unwrap()),
+            sender_address: [u32::from_be_bytes(bytes[16..20].try_into().unwrap()), 
+                             u32::from_be_bytes(bytes[20..24].try_into().unwrap()),
+                             u32::from_be_bytes(bytes[24..28].try_into().unwrap()),
+                             u32::from_be_bytes(bytes[28..32].try_into().unwrap())],
+            receiver_address: [u32::from_be_bytes(bytes[32..36].try_into().unwrap()),
+                               u32::from_be_bytes(bytes[36..40].try_into().unwrap()),
+                               u32::from_be_bytes(bytes[40..44].try_into().unwrap()),
+                               u32::from_be_bytes(bytes[44..48].try_into().unwrap())],
+            sid: bytes[48..64].try_into().unwrap(),
+            padding_length: u32::from_be_bytes(bytes[64..68].try_into().unwrap()),
+            start_time: TwampTime::from_bytes(bytes[68..76].try_into().unwrap()).unwrap(),
+            timeout: TwampTime::from_bytes(bytes[76..84].try_into().unwrap()).unwrap(),
+            type_p_descriptor: u32::from_be_bytes(bytes[84..88].try_into().unwrap()),
+            mbz_: bytes[88..96].try_into().unwrap(),
+            hwmac: bytes[96..112].try_into().unwrap()
+        })
+    }
 }
 
 
 pub struct TwampMessageAcceptSession {
     pub accept: u8,
-    mbz: u8,
+    pub mbz: u8,
     pub port: u16,
     pub sid: [u8; 16],
-    mbz_: [u8; 12],
-    hwmac: [u8; 16]
+    pub mbz_: [u8; 12],
+    pub hwmac: [u8; 16]
 }
 
 impl TwampMessageAcceptSession {
@@ -238,6 +281,21 @@ impl TwampMessageAcceptSession {
             mbz_: bytes[20..32].try_into().unwrap(),
             hwmac: bytes[32..48].try_into().unwrap()
         })
+    }
+
+    pub fn to_bytes(&self, bytes: &mut [u8]) -> Result<usize, String> {
+        if bytes.len() < std::mem::size_of::<TwampMessageAcceptSession>() {
+            return Err(format!("Input array size is smaller than structure length. "));
+        }
+
+        bytes[0] = self.accept;
+        bytes[1] = self.mbz;
+        bytes[2..4].copy_from_slice(&self.port.to_be_bytes());
+        bytes[4..20].copy_from_slice(&self.sid);
+        bytes[20..32].copy_from_slice(&self.mbz_);
+        bytes[32..48].copy_from_slice(&self.hwmac);
+        
+        Ok(std::mem::size_of::<TwampMessageAcceptSession>())
     }
 }
 
@@ -448,4 +506,11 @@ pub struct ControlRequest {
     pub twamp_control_mode: TwampControlMode
 }
 
-
+pub enum AcceptValue {
+    Ok = 0,
+    FailureUnspecified = 1,
+    InternelError = 2,
+    NotSupported = 3,
+    PermanantResourceLimitations = 4,
+    TemporaryResourceLimitations = 5
+}
