@@ -184,12 +184,8 @@ fn main() {
 
                 for control_request in control_requests.iter_mut() {
                     let res = handle_client(control_request, &mut buffer, &server_start_time);
-                    match res {
-                        Ok(_) => (),
-                        Err(e) => {
-                            // Print the error message.
-                            println!("Error: {} ... ", e);
-                        }
+                    if res.is_err() {
+                        println!("{}", res.err().unwrap());                        
                     }
                 }
 

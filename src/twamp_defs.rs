@@ -38,15 +38,19 @@ impl TwampMessageServerGreeting {
         })
     }
 
-    pub fn to_bytes(&self) -> [u8; std::mem::size_of::<TwampMessageServerGreeting>()] {
-        let mut bytes = [0u8; std::mem::size_of::<TwampMessageServerGreeting>()];
+    pub fn to_bytes(&self, bytes: &mut [u8]) -> Result<usize, String> {
+        if bytes.len() < std::mem::size_of::<TwampMessageServerGreeting>() {
+            return Err(format!("Input array size is smaller than structure length. "));
+        }
+        
         bytes[0..12].copy_from_slice(&self.unused);
         bytes[12..16].copy_from_slice(&self.modes);
         bytes[16..32].copy_from_slice(&self.challenge);
         bytes[32..48].copy_from_slice(&self.salt);
         bytes[48..52].copy_from_slice(&self.count.to_be_bytes());
         bytes[52..64].copy_from_slice(&self.mbz);
-        bytes
+
+        Ok(std::mem::size_of::<TwampMessageServerGreeting>())
     }
 }
 
@@ -156,22 +160,25 @@ impl TwampMessageServerStart {
             mbz: bytes[0..15].try_into().unwrap(),
             accept: bytes[15],
             server_iv: bytes[16..32].try_into().unwrap(),
-            start_time: TwampTime {
-                seconds: u32::from_be_bytes(bytes[32..36].try_into().unwrap()),
-                fraction: u32::from_be_bytes(bytes[36..40].try_into().unwrap())
-            },
+            start_time: TwampTime::create_instance(u32::from_be_bytes(bytes[32..36].try_into().unwrap()),
+                                                  u32::from_be_bytes(bytes[36..40].try_into().unwrap())),
             mbz_: bytes[40..48].try_into().unwrap(),
         })
     }
 
-    pub fn to_bytes(&self) -> [u8; std::mem::size_of::<TwampMessageServerStart>()] {
-        let mut bytes = [0u8; std::mem::size_of::<TwampMessageServerStart>()];
+    pub fn to_bytes(&self, bytes: &mut [u8]) -> Result<usize, String> {
+
+        if bytes.len() < std::mem::size_of::<TwampMessageServerStart>() {
+            return Err(format!("Input array size is smaller than structure length. "));
+        }
+
         bytes[0..15].copy_from_slice(&self.mbz);
         bytes[15] = self.accept;
         bytes[16..32].copy_from_slice(&self.server_iv);
         bytes[32..40].copy_from_slice(&self.start_time.to_bytes());
         bytes[40..48].copy_from_slice(&self.mbz_);
-        bytes
+
+        Ok(std::mem::size_of::<TwampMessageServerStart>())
     }
 }
 
