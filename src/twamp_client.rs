@@ -218,7 +218,7 @@ pub fn start_session(
     // Convert the twamp_message_start_sessions to byte array and send it to TWAMP Server.
     let twamp_message_start_sessions_bytes = twamp_message_start_sessions.to_bytes();
 
-    // Send the TwampMessageStartSessions to the TWAMP Server.
+    // Send the TwampMessageStartSession to the TWAMP Server.
     let res = tcp_stream.write(&twamp_message_start_sessions_bytes);
 
     // Perform match expression on write result. Return the error if write fails. Otherwise move forward.
@@ -226,7 +226,7 @@ pub fn start_session(
         Ok(_) => (),
         Err(e) => {
             return Err(format!(
-                "Failed to send TwampMessageStartSessions to the TWAMP Server: {}",
+                "Failed to send TwampMessageStartSession to the TWAMP Server: {}",
                 e
             ))
         }

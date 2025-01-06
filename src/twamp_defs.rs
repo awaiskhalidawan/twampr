@@ -320,13 +320,25 @@ impl TwampMessageStartSessions {
         bytes[16..32].copy_from_slice(&self.hwmac);
         bytes
     }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+        if bytes.len() < std::mem::size_of::<TwampMessageStartSessions>() {
+            return Err(format!("Input array size is smaller than structure length. "));
+        }
+
+        Ok(Self {
+            first_octet: bytes[0],
+            mbz: bytes[1..16].try_into().unwrap(),
+            hwmac: bytes[16..32].try_into().unwrap()
+        })
+    }
 }
 
 
 pub struct TwampMessageStartAck {
     pub accept: u8,
-    mbz: [u8; 15],
-    hwmac: [u8; 16]
+    pub mbz: [u8; 15],
+    pub hwmac: [u8; 16]
 }
 
 impl TwampMessageStartAck {
@@ -340,6 +352,18 @@ impl TwampMessageStartAck {
             mbz: bytes[1..16].try_into().unwrap(),
             hwmac: bytes[16..32].try_into().unwrap()
         })
+    }
+
+    pub fn to_bytes(&self, bytes: &mut [u8]) -> Result<usize, String> {
+        if bytes.len() < std::mem::size_of::<TwampMessageStartAck>() {
+            return Err(format!("Input array size is smaller than structure length. "));
+        }
+
+        bytes[0] = self.accept;
+        bytes[1..16].copy_from_slice(&self.mbz);
+        bytes[16..32].copy_from_slice(&self.hwmac);
+        
+        Ok(std::mem::size_of::<TwampMessageStartAck>())
     }
 }
 
@@ -359,10 +383,25 @@ impl TwampMessageStopSessions {
         bytes[0] = self.first_octet;
         bytes[1] = self.accept;
         bytes[2..4].copy_from_slice(&self.mbz);
-        bytes[4..8].copy_from_slice(&self.number_of_sessions.to_le_bytes());
+        bytes[4..8].copy_from_slice(&self.number_of_sessions.to_be_bytes());
         bytes[8..16].copy_from_slice(&self.mbz_);
         bytes[16..32].copy_from_slice(&self.hwmac);
         bytes
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+        if bytes.len() < std::mem::size_of::<TwampMessageStopSessions>() {
+            return Err(format!("Input array size is smaller than structure length. "));
+        }
+
+        Ok(Self {
+            first_octet: bytes[0],
+            accept: bytes[1],
+            mbz: bytes[2..4].try_into().unwrap(),
+            number_of_sessions: u32::from_be_bytes(bytes[4..8].try_into().unwrap()),
+            mbz_: bytes[8..16].try_into().unwrap(),
+            hwmac: bytes[16..32].try_into().unwrap()
+        })
     }
 }
 
