@@ -140,12 +140,14 @@ fn main() {
 
         let local_port = args[2].parse::<u16>().expect("Invalid Local Port ... ");
 
+        let ip_addr = Ipv4Addr::new(0,0,0,0);
+
         // Create a TCP listener on any Ip address and specific port.
-        let listener = TcpListener::bind((IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)), local_port))
-            .expect("TWAMP server start failed: Unable to bind to address ... ");
+        let listener = TcpListener::bind((ip_addr, local_port))
+            .expect(format!("TWAMP server start failed: Unable to bind to address {}:{}", ip_addr, local_port).as_str());
 
         // Print the server details.
-        println!("TWAMP server started on port:{} ... ", local_port);
+        println!("TWAMP server started on address {}:{}", ip_addr, local_port);
 
         // Get the server start time.
         let server_start_time = TwampTime::get_current_time_twamp_format();
@@ -153,6 +155,7 @@ fn main() {
         // Create a vector to store the control requests.
         let mut control_requests: Vec<ControlRequest> = Vec::new();
 
+        // Create a inter-thread communication channel send TCP connection information from main thread to message handler thread.
         let (tx, rx) = std::sync::mpsc::channel();
 
         // Start a thread to handle the incoming connections.
@@ -168,17 +171,17 @@ fn main() {
                             tcp_stream: stream,
                             state: ControlRequestState::RequestReceived,
                             twamp_control_mode: TwampControlMode::Unauthenticated,
+                            bytes_received: 0,
+                            rx_buffer: [0; 256],
+                            use_rx_buffer: false
                         };
 
                         control_requests.push(control_request);
                     }
                     Err(std::sync::mpsc::TryRecvError::Empty) => (),
                     Err(e) => {
-                        // Print the error message.
-                        println!(
-                            "Unable to receive TCP stream object from main thread. Error: {} ... ",
-                            e
-                        );
+                        // Print the error message if the error message is other then TryRecvError::Empty.
+                        println!("Unable to receive TCP stream object from main thread. Error: {} ... ", e);
                     }
                 }
 
@@ -194,7 +197,7 @@ fn main() {
                     control_request.state != ControlRequestState::ConnectionInvalid
                 });
 
-                // Save CPU cycles.
+                // Save some CPU cycles.
                 std::thread::sleep(std::time::Duration::from_millis(50));
             }
         });
@@ -204,20 +207,15 @@ fn main() {
             match stream {
                 Ok(stream) => {
                     // Print the client details.
-                    println!("Client connected from {} ... ", stream.peer_addr().unwrap());
+                    println!("Client connected from {} ...", stream.peer_addr().unwrap());
 
                     let res = tx.send(stream);
-                    match res {
-                        Ok(_) => (),
-                        Err(e) => {
-                            // Print the error message.
-                            println!("Unable to send TCP stream object to tcp handler thread. Error: {} ... ", e);
-                        }
+                    if res.is_err() {
+                        println!("Unable to send TCP stream object to tcp handler thread. Error: {}", res.err().unwrap());
                     }
                 }
                 Err(e) => {
-                    // Print the error message.
-                    println!("Error: {} ... ", e);
+                    println!("An error has occured while listening for incoming TCP connections. Error: {}", e);
                 }
             }
         }

@@ -40,7 +40,7 @@ impl TwampMessageServerGreeting {
 
     pub fn to_bytes(&self, bytes: &mut [u8]) -> Result<usize, String> {
         if bytes.len() < std::mem::size_of::<TwampMessageServerGreeting>() {
-            return Err(format!("Input array size is smaller than structure length. "));
+            return Err(format!("Buffer size is smaller than structure length. "));
         }
         
         bytes[0..12].copy_from_slice(&self.unused);
@@ -169,7 +169,7 @@ impl TwampMessageServerStart {
     pub fn to_bytes(&self, bytes: &mut [u8]) -> Result<usize, String> {
 
         if bytes.len() < std::mem::size_of::<TwampMessageServerStart>() {
-            return Err(format!("Input array size is smaller than structure length. "));
+            return Err(format!("Buffer size is smaller than structure length. "));
         }
 
         bytes[0..15].copy_from_slice(&self.mbz);
@@ -549,7 +549,10 @@ pub enum TwampControlPacketType {
 pub struct ControlRequest {
     pub tcp_stream: TcpStream,
     pub state: ControlRequestState,
-    pub twamp_control_mode: TwampControlMode
+    pub twamp_control_mode: TwampControlMode,
+    pub bytes_received: usize,
+    pub rx_buffer: [u8; 256],
+    pub use_rx_buffer: bool
 }
 
 pub enum AcceptValue {
