@@ -2,9 +2,9 @@ use crate::twamp_defs::*;
 use rand::Rng;
 use std::io::{prelude::*, ErrorKind};
 
-pub fn read_message_from_client<T>(control_request: &mut ControlRequest, buffer: &mut [u8]) -> Result<bool, String> {
+pub fn read_message_from_client<T: Deserialize>(control_request: &mut ControlRequest, rx_buffer: &mut [u8]) -> Result<Option<T>, String> {
     // Try to receive a message from client.
-    let res = control_request.tcp_stream.read(buffer);
+    let res = control_request.tcp_stream.read(rx_buffer);
     if res.is_err() {
         let err = res.err().unwrap();
         if err.kind() != ErrorKind::WouldBlock {
@@ -13,7 +13,7 @@ pub fn read_message_from_client<T>(control_request: &mut ControlRequest, buffer:
         }
 
         // Read timeout has occured. It means that there are no bytes to be received on socket. Return false.
-        return Ok(false);
+        return Ok(Option::None);
     }
 
     // Some bytes are received. We check that if they are equal to the desired message size. 
@@ -25,19 +25,21 @@ pub fn read_message_from_client<T>(control_request: &mut ControlRequest, buffer:
     if control_request.bytes_received < std::mem::size_of::<T>() {
         control_request.rx_buffer
             [(control_request.bytes_received - bytes_received)..control_request.bytes_received]
-            .copy_from_slice(&buffer[0..bytes_received]);
+            .copy_from_slice(&rx_buffer[0..bytes_received]);
         control_request.use_rx_buffer = true;
-        return Ok(false);
+        return Ok(Option::None);
     }
 
     if control_request.use_rx_buffer {
         control_request.rx_buffer
             [(control_request.bytes_received - bytes_received)..control_request.bytes_received]
-            .copy_from_slice(&buffer[0..bytes_received]);
+            .copy_from_slice(&rx_buffer[0..bytes_received]);
     }
 
     // Number of received bytes must be equal to the message size.
     if control_request.bytes_received != std::mem::size_of::<T>() {
+        control_request.bytes_received = 0;
+        control_request.use_rx_buffer = false;        
         return Err(format!(
             "Number of received bytes:{} are not equal to message size: {}",
             control_request.bytes_received,
@@ -49,7 +51,13 @@ pub fn read_message_from_client<T>(control_request: &mut ControlRequest, buffer:
     control_request.bytes_received = 0;
     control_request.use_rx_buffer = false;
 
-    let res = T::from_bytes(&control_request.rx_buffer);
+    let selected_rx_buffer = if control_request.use_rx_buffer {
+        &control_request.rx_buffer[0..control_request.rx_buffer.len()]
+    } else {
+        &rx_buffer[0..rx_buffer.len()]
+    };
+
+    let res = T::from_bytes(selected_rx_buffer);
     if res.is_err() {
         control_request.state = ControlRequestState::ConnectionInvalid;
         return Err(format!(
@@ -58,7 +66,7 @@ pub fn read_message_from_client<T>(control_request: &mut ControlRequest, buffer:
         ));
     }
 
-    Ok(true)
+    Ok(Option::Some(res.unwrap()))
 }
 
 pub fn handle_client(
@@ -116,7 +124,7 @@ pub fn handle_client(
                 return Err(res.err().unwrap());
             }
 
-            if !res.ok().unwrap() {
+            if res.ok().is_none() {
                 return Ok(());
             }
 

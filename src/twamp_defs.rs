@@ -11,6 +11,12 @@ pub const MAX_INTERPACKET_INTERVAL: u16 = 100;        // Interpacket interval in
 
 pub const TWAMP_TEST_PACKET_RX_WAIT_TIME_MS: u16 = 5000;   // Waiting for test packets to be received in milliseconds.
 
+pub const RX_BUFFER_SIZE: usize = 256;                  // Size of buffer to receive messages.
+
+pub trait Deserialize {
+    fn from_bytes(bytes: &[u8]) -> Result<Self, String> where Self: Sized;
+}
+
 #[derive(Debug)]
 pub struct TwampMessageServerGreeting {
     pub unused: [u8; 12],
@@ -72,10 +78,12 @@ impl TwampMessageSetupResponse {
         bytes[148..164].copy_from_slice(&self.client_iv);
         bytes
     }
+}
 
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+impl Deserialize for TwampMessageSetupResponse {
+    fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
         if bytes.len() < mem::size_of::<TwampMessageSetupResponse>() {
-            return Err("Invalid bytes array length. ".to_string());
+            return Err("Buffer length is less then structure size. ".to_string());
         }
 
         Ok(Self {
@@ -551,7 +559,7 @@ pub struct ControlRequest {
     pub state: ControlRequestState,
     pub twamp_control_mode: TwampControlMode,
     pub bytes_received: usize,
-    pub rx_buffer: [u8; 256],
+    pub rx_buffer: [u8; RX_BUFFER_SIZE],
     pub use_rx_buffer: bool
 }
 
