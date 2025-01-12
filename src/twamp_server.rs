@@ -9,24 +9,26 @@ pub fn read_message_from_client<T: Deserialize>(control_request: &mut ControlReq
         let err = res.err().unwrap();
         if err.kind() != ErrorKind::WouldBlock {
             control_request.state = ControlRequestState::ConnectionInvalid;
-            return Err(format!("Unable to read TWAMP message from client. Error: {}", err));
+            return Err(format!("Unable to read data from socket. Error: {}", err));
         }
 
-        // Read timeout has occured. It means that there are no bytes to be received on socket. Return false.
+        // Read timeout has occured. It means that there are no bytes to be received on socket.
         return Ok(Option::None);
     }
 
-    // Some bytes are received. We check that if they are equal to the desired message size. 
-    let bytes_received = res.ok().unwrap();
+    // Some bytes are received. We check that if they are equal to the desired message size.
+    let mut bytes_received = res.ok().unwrap();
 
     control_request.bytes_received += bytes_received;
 
-    // Copy the received bytes into the buffer if the received bytes number is less than message size.
+    // Copy the received bytes into the buffer if the received bytes are less than message size.
     if control_request.bytes_received < std::mem::size_of::<T>() {
         control_request.rx_buffer
             [(control_request.bytes_received - bytes_received)..control_request.bytes_received]
             .copy_from_slice(&rx_buffer[0..bytes_received]);
         control_request.use_rx_buffer = true;
+
+        // Not all the bytes are received yet. Wait for next iteration.
         return Ok(Option::None);
     }
 
@@ -36,21 +38,18 @@ pub fn read_message_from_client<T: Deserialize>(control_request: &mut ControlReq
             .copy_from_slice(&rx_buffer[0..bytes_received]);
     }
 
-    // Number of received bytes must be equal to the message size.
-    if control_request.bytes_received != std::mem::size_of::<T>() {
-        control_request.bytes_received = 0;
-        control_request.use_rx_buffer = false;        
-        return Err(format!(
-            "Number of received bytes:{} are not equal to message size: {}",
-            control_request.bytes_received,
-            std::mem::size_of::<T>()
-        ));
-    }
-
-    // Message successfully received. Reset the bytes_received in the control_request structure to 0. Return true.
+    bytes_received = control_request.bytes_received; 
     control_request.bytes_received = 0;
     control_request.use_rx_buffer = false;
 
+    // Number of received bytes must be equal to the message size.
+    if bytes_received != std::mem::size_of::<T>() {
+        return Err(format!("Number of received bytes: {} are not equal to message size: {}", 
+                            bytes_received,
+                            std::mem::size_of::<T>()));
+    }
+
+    // Desired message size successfully received. Now select the buffer to be used for deserialization.
     let selected_rx_buffer = if control_request.use_rx_buffer {
         &control_request.rx_buffer[0..control_request.rx_buffer.len()]
     } else {
@@ -60,10 +59,7 @@ pub fn read_message_from_client<T: Deserialize>(control_request: &mut ControlReq
     let res = T::from_bytes(selected_rx_buffer);
     if res.is_err() {
         control_request.state = ControlRequestState::ConnectionInvalid;
-        return Err(format!(
-            "Unable to convert TWAMP message from received bytes. Error: {}",
-            res.err().unwrap()
-        ));
+        return Err(format!("Unable to deserialize TWAMP message. Error: {}", res.err().unwrap()));
     }
 
     Ok(Option::Some(res.unwrap()))
@@ -105,7 +101,7 @@ pub fn handle_client(
 
             let write_size = res.ok().unwrap();
 
-            let res = control_request.tcp_stream.write(&buffer[0..write_size]);
+            let res = control_request.tcp_stream.write(&buffer[0..write_size]);            
             if res.is_err() {
                 control_request.state = ControlRequestState::ConnectionInvalid;
                 return Err(format!(
@@ -114,30 +110,27 @@ pub fn handle_client(
                 ));
             }
 
+            if res.ok().unwrap() != write_size {
+                panic!("Unable to send complete TWAMP message to client ... ");
+            }
+
             control_request.state = ControlRequestState::GreetingMessageSent;
             println!("TWAMP server greeting message sent to client ...");
         }
         ControlRequestState::GreetingMessageSent => {
-            // Try to receive the response from client.
+            // Try to receive TWAMP message setup response from client.
             let res = read_message_from_client::<TwampMessageSetupResponse>(control_request, buffer);
             if res.is_err() {
                 return Err(res.err().unwrap());
             }
 
-            if res.ok().is_none() {
+            let res = res.unwrap();
+            if res.is_none() {
+                // No error has occurred but not all the required number of bytes are received. Wait for next iteration.
                 return Ok(());
             }
 
-            let res = TwampMessageSetupResponse::from_bytes(&control_request.rx_buffer);
-            if res.is_err() {
-                control_request.state = ControlRequestState::ConnectionInvalid;
-                return Err(format!(
-                    "Unable to convert TWAMP setup response message from received bytes. Error: {}",
-                    res.err().unwrap()
-                ));
-            }
-
-            let setup_response_message = res.ok().unwrap();
+            let setup_response_message = res.unwrap();
 
             if setup_response_message.mode[3] & 0x07 == 0x00 {
                 control_request.state = ControlRequestState::ConnectionInvalid;
