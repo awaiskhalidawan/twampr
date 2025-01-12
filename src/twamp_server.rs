@@ -1,6 +1,30 @@
 use crate::twamp_defs::*;
 use rand::Rng;
-use std::io::{prelude::*, ErrorKind};
+use std::{fmt::{format, write}, io::{prelude::*, ErrorKind}};
+
+pub fn send_message_to_client<T: Serialize>(message: &mut T, control_request: &mut ControlRequest,  buffer: &mut [u8]) -> Result<(), String> {
+    let res = message.to_bytes(buffer);
+    if res.is_err() {
+        control_request.state = ControlRequestState::ConnectionInvalid;
+        return Err(format!("Unable to serialize TWAMP message: {}", res.err().unwrap()));
+    }
+
+    let write_size = res.ok().unwrap();
+
+    let res = control_request.tcp_stream.write(&buffer[0..write_size]);
+    if res.is_err() {
+        control_request.state = ControlRequestState::ConnectionInvalid;
+        return Err(format!("Unable to send TWAMP message to client. Error: {}", res.err().unwrap()));
+    }
+
+    let sent_bytes = res.unwrap();
+    if sent_bytes != write_size {
+        panic!("Unable to send complete TWAMP message to client. Sent bytes: {}  Total bytes: {}", sent_bytes, write_size);
+    }
+
+    // Message sent successfully to the client.
+    Ok(())
+}
 
 pub fn read_message_from_client<T: Deserialize>(control_request: &mut ControlRequest, rx_buffer: &mut [u8]) -> Result<Option<T>, String> {
     // Try to receive a message from client.
@@ -144,7 +168,7 @@ pub fn handle_client(
                 return Err(format!("Received mode in TWAMP setup response message is not equal to the mode sent by server in TWAMP greeting message. "));
             }
 
-            let twamp_message_server_start = TwampMessageServerStart {
+            let mut twamp_message_server_start = TwampMessageServerStart {
                 mbz: [0; 15],
                 accept: AcceptValue::Ok as u8,
                 server_iv: [0; 16],
@@ -155,24 +179,9 @@ pub fn handle_client(
                 mbz_: [0; 8],
             };
 
-            let res = twamp_message_server_start.to_bytes(buffer);
+            let res = send_message_to_client::<TwampMessageServerStart>(&mut twamp_message_server_start, control_request, buffer);
             if res.is_err() {
-                control_request.state = ControlRequestState::ConnectionInvalid;
-                return Err(format!(
-                    "Unable to convert TWAMP server start message to bytes: {}",
-                    res.err().unwrap()
-                ));
-            }
-
-            let write_size = res.ok().unwrap();
-
-            let res = control_request.tcp_stream.write(&buffer[0..write_size]);
-            if res.is_err() {
-                control_request.state = ControlRequestState::ConnectionInvalid;
-                return Err(format!(
-                    "Unable to send TWAMP server start message to client. Error: {}",
-                    res.err().unwrap()
-                ));
+                return Err(format!("{}", res.err().unwrap()));                
             }
 
             control_request.state = ControlRequestState::ControlConnectionSetupComplete;

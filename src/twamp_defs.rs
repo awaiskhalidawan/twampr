@@ -13,6 +13,10 @@ pub const TWAMP_TEST_PACKET_RX_WAIT_TIME_MS: u16 = 5000;   // Waiting for test p
 
 pub const RX_BUFFER_SIZE: usize = 256;                  // Size of buffer to receive messages.
 
+pub trait Serialize {
+    fn to_bytes(&self, bytes: &mut [u8]) -> Result<usize, String>;
+}
+
 pub trait Deserialize {
     fn from_bytes(bytes: &[u8]) -> Result<Self, String> where Self: Sized;
 }
@@ -95,7 +99,7 @@ impl Deserialize for TwampMessageSetupResponse {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 pub struct TwampTime {
     pub seconds: u32,
     pub fraction: u32
@@ -173,9 +177,10 @@ impl TwampMessageServerStart {
             mbz_: bytes[40..48].try_into().unwrap(),
         })
     }
+}
 
-    pub fn to_bytes(&self, bytes: &mut [u8]) -> Result<usize, String> {
-
+impl Serialize for TwampMessageServerStart {
+    fn to_bytes(&self, bytes: &mut [u8]) -> Result<usize, String> {
         if bytes.len() < std::mem::size_of::<TwampMessageServerStart>() {
             return Err(format!("Buffer size is smaller than structure length. "));
         }
