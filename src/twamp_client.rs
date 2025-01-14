@@ -142,11 +142,16 @@ pub fn request_tw_session(tcp_stream: &mut TcpStream, local_ip: &Ipv4Addr) -> Re
         hwmac: [0; 16],
     };
 
+    let mut buffer = [0 as u8; RX_BUFFER_SIZE];
+
     // Convert the twamp_message_request_session to byte array and send it to TWAMP Server.
-    let twamp_message_request_session_bytes = twamp_message_request_session.to_bytes();
+    let res = twamp_message_request_session.to_bytes(&mut buffer);
+    if res.is_err() {
+        return Err(format!("Unable to serialize TWAMP message request session. Error: {}", res.err().unwrap()));
+    }
 
     // Send the TwampMessageRequestSession to the TWAMP Server.
-    let res = tcp_stream.write(&twamp_message_request_session_bytes);
+    let res = tcp_stream.write(&buffer[0..res.unwrap()]);
 
     // Perform match expression on write result. Return the error if write fails. Otherwise move forward.
     match res {
@@ -215,11 +220,16 @@ pub fn start_session(
         hwmac: [0; 16],
     };
 
+    let mut buffer = [0 as u8; TX_BUFFER_SIZE];
+
     // Convert the twamp_message_start_sessions to byte array and send it to TWAMP Server.
-    let twamp_message_start_sessions_bytes = twamp_message_start_sessions.to_bytes();
+    let res = twamp_message_start_sessions.to_bytes(&mut buffer);
+    if res.is_err() {
+        return Err(format!("Unable to serialize TWAMP message start sessions. Error: {}", res.err().unwrap()));
+    }
 
     // Send the TwampMessageStartSession to the TWAMP Server.
-    let res = tcp_stream.write(&twamp_message_start_sessions_bytes);
+    let res = tcp_stream.write(&buffer[0..res.ok().unwrap()]);
 
     // Perform match expression on write result. Return the error if write fails. Otherwise move forward.
     match res {
@@ -292,11 +302,16 @@ pub fn stop_session(tcp_stream: &mut TcpStream) -> Result<(), String> {
         hwmac: [0; 16],
     };
 
+    let mut buffer = [0 as u8; TX_BUFFER_SIZE];
+    
     // Convert the twamp_message_stop_sessions to byte array and send it to TWAMP Server.
-    let twamp_message_stop_sessions_bytes = twamp_message_stop_sessions.to_bytes();
+    let res = twamp_message_stop_sessions.to_bytes(&mut buffer);
+    if res.is_err() {
+        return Err(format!("Unable to serialize TWAMP message stop sessions. Error: {}", res.err().unwrap()));
+    }
 
     // Send the TwampMessageStopSessions to the TWAMP Server.
-    let res = tcp_stream.write(&twamp_message_stop_sessions_bytes);
+    let res = tcp_stream.write(&buffer[0..res.ok().unwrap()]);
 
     // Perform match expression on write result. Return the error if write fails. Otherwise move forward.
     match res {

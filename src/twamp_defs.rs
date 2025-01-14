@@ -1,17 +1,18 @@
 use std::mem;
 use std::net::TcpStream;
 
-pub const SESSION_SENDER_LOCAL_PORT: u16 = 7400;
-pub const SESSION_SENDER_REMOTE_PORT: u16 = 7400;
-
-pub const TWAMP_MIN_TEST_PACKET_SIZE: u16 = 50;       // Twamp min test packet size.
-pub const TWAMP_MAX_TEST_PACKET_SIZE: u16 = 2000;     // Twamp max test packet size.
-pub const MAX_NUMBER_OF_PACKETS_TO_TEST: u16 = 100;   // Max number of packets to be used in test.
-pub const MAX_INTERPACKET_INTERVAL: u16 = 100;        // Interpacket interval in milliseconds.
-
+pub const SESSION_SENDER_LOCAL_PORT: u16 = 7400;           // Default Local UDP port for TWAMP test.
+pub const SESSION_SENDER_REMOTE_PORT: u16 = 7400;          // Default Remote UDP port for TWAMP test.
+pub const TWAMP_MIN_TEST_PACKET_SIZE: u16 = 50;            // Twamp min test packet size.
+pub const TWAMP_MAX_TEST_PACKET_SIZE: u16 = 2000;          // Twamp max test packet size.
+pub const MAX_NUMBER_OF_PACKETS_TO_TEST: u16 = 100;        // Max number of packets to be used in test.
+pub const MAX_INTERPACKET_INTERVAL: u16 = 100;             // Interpacket interval in milliseconds.
 pub const TWAMP_TEST_PACKET_RX_WAIT_TIME_MS: u16 = 5000;   // Waiting for test packets to be received in milliseconds.
+pub const RX_BUFFER_SIZE: usize = 256;                     // Size of local buffer to receive messages.
+pub const TX_BUFFER_SIZE: usize = 256;                     // Size of local buffer to transmit messages.
 
-pub const RX_BUFFER_SIZE: usize = 256;                  // Size of buffer to receive messages.
+pub const SERIALIZATION_ERROR_MSG: &str = "Buffer size is smaller than structure length.";
+pub const DESERIALIZATION_ERROR_MSG: &str = "Buffer size is smaller than structure length.";
 
 pub trait Serialize {
     fn to_bytes(&self, bytes: &mut [u8]) -> Result<usize, String>;
@@ -215,9 +216,12 @@ pub struct TwampMessageRequestSession {
     pub hwmac: [u8; 16]
 }
 
-impl TwampMessageRequestSession {
-    pub fn to_bytes(&self) -> [u8; std::mem::size_of::<TwampMessageRequestSession>()] {
-        let mut bytes = [0u8; std::mem::size_of::<TwampMessageRequestSession>()];
+impl Serialize for TwampMessageRequestSession {
+    fn to_bytes(&self, bytes: &mut [u8]) -> Result<usize, String> {
+        if bytes.len() < mem::size_of::<TwampMessageRequestSession>() {
+            return Err(format!("{}", SERIALIZATION_ERROR_MSG));
+        }
+
         bytes[0] = self.first_octet;
         bytes[1] = self.ipvn_mbz;
         bytes[2] = self.conf_sender;
@@ -241,12 +245,15 @@ impl TwampMessageRequestSession {
         bytes[84..88].copy_from_slice(&self.type_p_descriptor.to_be_bytes());
         bytes[88..96].copy_from_slice(&self.mbz_);
         bytes[96..112].copy_from_slice(&self.hwmac);
-        bytes
-    }
 
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+        Ok(mem::size_of::<TwampMessageRequestSession>())
+    }
+}
+
+impl Deserialize for TwampMessageRequestSession {
+    fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
         if bytes.len() < mem::size_of::<TwampMessageRequestSession>() {
-            return Err("Invalid bytes array length. ".to_string());
+            return Err(format!("{}", DESERIALIZATION_ERROR_MSG));
         }
 
         Ok(Self {
@@ -287,10 +294,10 @@ pub struct TwampMessageAcceptSession {
     pub hwmac: [u8; 16]
 }
 
-impl TwampMessageAcceptSession {
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+impl Deserialize for TwampMessageAcceptSession {
+    fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
         if bytes.len() < mem::size_of::<TwampMessageAcceptSession>() {
-            return Err("Invalid bytes array length. ".to_string());
+            return Err(format!("{}", DESERIALIZATION_ERROR_MSG));
         }
 
         Ok(Self {
@@ -302,10 +309,12 @@ impl TwampMessageAcceptSession {
             hwmac: bytes[32..48].try_into().unwrap()
         })
     }
+}
 
-    pub fn to_bytes(&self, bytes: &mut [u8]) -> Result<usize, String> {
+impl Serialize for TwampMessageAcceptSession {
+    fn to_bytes(&self, bytes: &mut [u8]) -> Result<usize, String> {
         if bytes.len() < std::mem::size_of::<TwampMessageAcceptSession>() {
-            return Err(format!("Input array size is smaller than structure length. "));
+            return Err(format!("{}", SERIALIZATION_ERROR_MSG));
         }
 
         bytes[0] = self.accept;
@@ -325,18 +334,23 @@ pub struct TwampMessageStartSessions {
     pub hwmac: [u8; 16]
 }
 
-impl TwampMessageStartSessions {
-    pub fn to_bytes(&self) -> [u8; std::mem::size_of::<TwampMessageStartSessions>()] {
-        let mut bytes = [0u8; std::mem::size_of::<TwampMessageStartSessions>()];
+impl Serialize for TwampMessageStartSessions {
+    fn to_bytes(&self, bytes: &mut [u8]) -> Result<usize, String> {
+        if bytes.len() < std::mem::size_of::<TwampMessageStartSessions>() {
+            return Err(format!("{}", SERIALIZATION_ERROR_MSG));
+        }
+
         bytes[0] = self.first_octet;
         bytes[1..16].copy_from_slice(&self.mbz);
         bytes[16..32].copy_from_slice(&self.hwmac);
-        bytes
+        Ok(std::mem::size_of::<TwampMessageStartSessions>())
     }
+}
 
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+impl Deserialize for TwampMessageStartSessions {
+    fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
         if bytes.len() < std::mem::size_of::<TwampMessageStartSessions>() {
-            return Err(format!("Input array size is smaller than structure length. "));
+            return Err(format!("{}", DESERIALIZATION_ERROR_MSG));
         }
 
         Ok(Self {
@@ -354,10 +368,10 @@ pub struct TwampMessageStartAck {
     pub hwmac: [u8; 16]
 }
 
-impl TwampMessageStartAck {
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+impl Deserialize for TwampMessageStartAck {
+    fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
         if bytes.len() < mem::size_of::<TwampMessageStartAck>() {
-            return Err("Invalid bytes array length. ".to_string());
+            return Err(format!("{}", DESERIALIZATION_ERROR_MSG));
         }
 
         Ok(Self {
@@ -366,10 +380,12 @@ impl TwampMessageStartAck {
             hwmac: bytes[16..32].try_into().unwrap()
         })
     }
+}
 
-    pub fn to_bytes(&self, bytes: &mut [u8]) -> Result<usize, String> {
+impl Serialize for TwampMessageStartAck {
+    fn to_bytes(&self, bytes: &mut [u8]) -> Result<usize, String> {
         if bytes.len() < std::mem::size_of::<TwampMessageStartAck>() {
-            return Err(format!("Input array size is smaller than structure length. "));
+            return Err(format!("{}", SERIALIZATION_ERROR_MSG));
         }
 
         bytes[0] = self.accept;
@@ -390,21 +406,26 @@ pub struct TwampMessageStopSessions {
     pub hwmac: [u8; 16]
 }
 
-impl TwampMessageStopSessions {
-    pub fn to_bytes(&self) -> [u8; std::mem::size_of::<TwampMessageStopSessions>()] {
-        let mut bytes = [0u8; std::mem::size_of::<TwampMessageStopSessions>()];
+impl Serialize for TwampMessageStopSessions {
+    fn to_bytes(&self, bytes: &mut [u8]) -> Result<usize, String> {
+        if bytes.len() < std::mem::size_of::<TwampMessageStopSessions>() {
+            return Err(format!("{}", SERIALIZATION_ERROR_MSG));
+        }
+
         bytes[0] = self.first_octet;
         bytes[1] = self.accept;
         bytes[2..4].copy_from_slice(&self.mbz);
         bytes[4..8].copy_from_slice(&self.number_of_sessions.to_be_bytes());
         bytes[8..16].copy_from_slice(&self.mbz_);
         bytes[16..32].copy_from_slice(&self.hwmac);
-        bytes
+        Ok(std::mem::size_of::<TwampMessageStopSessions>())
     }
+}
 
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+impl Deserialize for TwampMessageStopSessions {
+    fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
         if bytes.len() < std::mem::size_of::<TwampMessageStopSessions>() {
-            return Err(format!("Input array size is smaller than structure length. "));
+            return Err(format!("{}", DESERIALIZATION_ERROR_MSG));
         }
 
         Ok(Self {

@@ -189,37 +189,28 @@ pub fn handle_client(
         }
         ControlRequestState::ControlConnectionSetupComplete => {
             // Try to receive the response from client.
-            let res = control_request.tcp_stream.read(buffer);
+            let res = control_request.tcp_stream.peek(&mut buffer[0..1]);
             if res.is_err() {
                 let err = res.err().unwrap();
                 if err.kind() != ErrorKind::WouldBlock {
                     control_request.state = ControlRequestState::ConnectionInvalid;
-                    return Err(format!("Unable to read TWAMP session control (request/start/stop) message. Error: {} ... ", err));
+                    return Err(format!("Unable to peek TWAMP session control code byte from socket. Error: {} ... ", err));
                 }
                 return Ok(());
-            }
-
-            let bytes_received = res.ok().unwrap();
-            if bytes_received == 0 {
-                control_request.state = ControlRequestState::ConnectionInvalid;
-                return Err(format!("Zero bytes received from client for TWAMP session control (request/start/stop) message. "));
             }
 
             let first_octet = buffer[0];
 
             if first_octet == TwampControlPacketType::RequestSession as u8 {
-                // Request session message received.
-                if bytes_received != std::mem::size_of::<TwampMessageRequestSession>() {
-                    control_request.state = ControlRequestState::ConnectionInvalid;
-                    return Err(format!(
-                        "Invalid TWAMP request session message size received from the client ... "
-                    ));
-                }
-
-                let res = TwampMessageRequestSession::from_bytes(buffer);
+                let res = read_message_from_client::<TwampMessageRequestSession>(control_request, buffer);
                 if res.is_err() {
-                    control_request.state = ControlRequestState::ConnectionInvalid;
-                    return Err(format!("Unable to convert TWAMP request session message from received bytes. Error: {} ", res.err().unwrap()));
+                    return Err(res.err().unwrap());
+                }
+    
+                let res = res.unwrap();
+                if res.is_none() {
+                    // No error has occurred but not all the required number of bytes are received. Wait for next iteration.
+                    return Ok(());
                 }
 
                 let twamp_message_request_session = res.unwrap();
@@ -257,83 +248,53 @@ pub fn handle_client(
                     accept_session_message.sid[0..sid.len()].copy_from_slice(sid.as_bytes());
                 }
 
-                let res = accept_session_message.to_bytes(buffer);
+                let res = send_message_to_client(&mut accept_session_message, control_request, buffer);
                 if res.is_err() {
-                    control_request.state = ControlRequestState::ConnectionInvalid;
-                    return Err(format!(
-                        "Unable to convert TWAMP accept session message to bytes: {}",
-                        res.err().unwrap()
-                    ));
-                }
-
-                let write_size = res.ok().unwrap();
-                let res = control_request.tcp_stream.write(&buffer[0..write_size]);
-
-                if res.is_err() {
-                    control_request.state = ControlRequestState::ConnectionInvalid;
-                    return Err(format!(
-                        "Unable to send TWAMP accept session message client. Error: {}",
-                        res.err().unwrap()
-                    ));
+                    return Err(format!("{}", res.err().unwrap()));                
                 }
 
                 println!("TWAMP accept session message sent to client ... ");
             } else if first_octet == TwampControlPacketType::StartSession as u8 {
-                // Start session message received.
-                if bytes_received != std::mem::size_of::<TwampMessageStartSessions>() {
-                    control_request.state = ControlRequestState::ConnectionInvalid;
-                    return Err(format!(
-                        "Invalid TWAMP start session message size received from the client ... "
-                    ));
+                let res = read_message_from_client::<TwampMessageStartSessions>(control_request, buffer);
+                if res.is_err() {
+                    return Err(res.err().unwrap());
+                }
+    
+                let res = res.unwrap();
+                if res.is_none() {
+                    // No error has occurred but not all the required number of bytes are received. Wait for next iteration.
+                    return Ok(());
                 }
 
-                let res = TwampMessageStartSessions::from_bytes(buffer);
-                if res.is_err() {
-                    control_request.state = ControlRequestState::ConnectionInvalid;
-                    return Err(format!("Unable to convert TWAMP start session message from received bytes. Error: {} ", res.err().unwrap()));
-                }
+                let res = res.unwrap();
 
                 // Send message start ack to client.
-                let twamp_message_start_ack = TwampMessageStartAck {
+                let mut twamp_message_start_ack = TwampMessageStartAck {
                     accept: AcceptValue::Ok as u8,
                     mbz: [0; 15],
                     hwmac: [0; 16],
                 };
 
-                let res = twamp_message_start_ack.to_bytes(buffer);
+                let res = send_message_to_client(&mut twamp_message_start_ack, control_request, buffer);
                 if res.is_err() {
-                    return Err(format!(
-                        "Unable to convert TWAMP message start ack to bytes: {}",
-                        res.err().unwrap()
-                    ));
-                }
-
-                let write_size = res.ok().unwrap();
-
-                let res = control_request.tcp_stream.write(&buffer[0..write_size]);
-                if res.is_err() {
-                    return Err(format!(
-                        "Unable to send TWAMP message start ack to client: {}",
-                        res.err().unwrap()
-                    ));
+                    return Err(format!("{}", res.err().unwrap()));                
                 }
 
                 println!("TWAMP message start ack sent to client ... ");
             } else if first_octet == TwampControlPacketType::StopSession as u8 {
-                // Stop session message received.
-                if bytes_received != std::mem::size_of::<TwampMessageStopSessions>() {
-                    control_request.state = ControlRequestState::ConnectionInvalid;
-                    return Err(format!(
-                        "Invalid TWAMP stop session message size received from the client ... "
-                    ));
-                }
-
-                let res = TwampMessageStopSessions::from_bytes(buffer);
+                let res = read_message_from_client::<TwampMessageStopSessions>(control_request, buffer);
                 if res.is_err() {
-                    control_request.state = ControlRequestState::ConnectionInvalid;
-                    return Err(format!("Unable to convert TWAMP stop session message from received bytes. Error: {} ", res.err().unwrap()));
+                    return Err(res.err().unwrap());
+                }
+    
+                let res = res.unwrap();
+                if res.is_none() {
+                    // No error has occurred but not all the required number of bytes are received. Wait for next iteration.
+                    return Ok(());
                 }
 
+                let res = res.unwrap();
+                
                 // Remove test session. Compare test session count as well.
             } else {
                 control_request.state = ControlRequestState::ConnectionInvalid;
