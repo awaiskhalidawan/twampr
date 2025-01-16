@@ -73,42 +73,34 @@ pub fn connect_to_server(
         .mode
         .copy_from_slice(&greeting_message.modes);
 
+    let mut buffer = [0 as u8; TX_BUFFER_SIZE];
+
     // Convert the twamp_message_setup_response to byte array and send it to TWAMP Server.
-    let twamp_message_setup_response_bytes = twamp_message_setup_response.to_bytes();
+    let res = twamp_message_setup_response.to_bytes(&mut buffer);
+    if res.is_err() {
+        return Err(format!("Unable to serialize TWAMP message setup response. Error: {}", res.err().unwrap()));
+    }
 
     // Send the TwampMessageSetupResponse to the TWAMP Server.
-    let res = socket.write(&twamp_message_setup_response_bytes);
-
-    // Perform match expression on write result. Return the error if write fails. Otherwise move forward.
-    match res {
-        Ok(_) => (),
-        Err(e) => {
-            return Err(format!(
-                "Failed to send TwampMessageSetupResponse to the TWAMP Server: {}",
-                e
-            ))
-        }
-    };
+    let res = socket.write(&buffer[0..res.ok().unwrap()]);
+    if res.is_err() {
+        return Err(format!("Failed to send Twamp message setup response to the TWAMP Server: {}", res.err().unwrap()));
+    }
 
     // Wait for 50 ms before reading the data from socket.
     std::thread::sleep(Duration::from_millis(50));
 
     // Read the data from the socket.
-    let bytes_received = socket
-        .read(&mut read_buffer)
-        .expect("Failed to read data from the TWAMP Server ... ");
-
+    let bytes_received = socket.read(&mut read_buffer).expect("Failed to read data from the TWAMP Server ... ");
     if bytes_received != mem::size_of::<TwampMessageServerStart>() {
-        return Err(
-            "Invalid TwampMessageServerStart size received from the TWAMP Server ... ".to_string(),
-        );
+        return Err(format!("Invalid Twamp message server start size received from the TWAMP Server ... "));
     }
 
     let twamp_message_server_start = TwampMessageServerStart::from_bytes(&read_buffer)
-        .expect("Failed to parse TwampMessageServerStart ... ");
+        .expect("Failed to parse Twamp message server start ... ");
 
     if twamp_message_server_start.accept != 0 {
-        return Err("Invalid accept value in TwampMessageServerStart ... ".to_string());
+        return Err("Invalid accept value in Twamp message server start ... ".to_string());
     }
 
     println!("Connection successful with TWAMP Server ... ");
@@ -118,7 +110,7 @@ pub fn connect_to_server(
 pub fn request_tw_session(tcp_stream: &mut TcpStream, local_ip: &Ipv4Addr) -> Result<u16, String> {
     // Check if tcp stream is connected.
     if !tcp_stream.peer_addr().is_ok() {
-        return Err("TCP Stream is not connected ... ".to_string());
+        return Err("TCP connection with TWAMP server is not valid any more ... ".to_string());
     }
 
     // Create a TwampMessageRequestSession message and send it to TWAMP server.
@@ -142,7 +134,7 @@ pub fn request_tw_session(tcp_stream: &mut TcpStream, local_ip: &Ipv4Addr) -> Re
         hwmac: [0; 16],
     };
 
-    let mut buffer = [0 as u8; RX_BUFFER_SIZE];
+    let mut buffer = [0 as u8; TX_BUFFER_SIZE];
 
     // Convert the twamp_message_request_session to byte array and send it to TWAMP Server.
     let res = twamp_message_request_session.to_bytes(&mut buffer);
@@ -152,38 +144,24 @@ pub fn request_tw_session(tcp_stream: &mut TcpStream, local_ip: &Ipv4Addr) -> Re
 
     // Send the TwampMessageRequestSession to the TWAMP Server.
     let res = tcp_stream.write(&buffer[0..res.unwrap()]);
-
-    // Perform match expression on write result. Return the error if write fails. Otherwise move forward.
-    match res {
-        Ok(_) => (),
-        Err(e) => {
-            return Err(format!(
-                "Failed to send TwampMessageRequestSession to the TWAMP Server: {}",
-                e
-            ))
-        }
-    };
+    if res.is_err() {
+        return Err(format!("Failed to send Twamp message request session to TWAMP Server: {}", res.err().unwrap()));
+    }
 
     // Wait for 50 ms before reading the data from socket.
     std::thread::sleep(Duration::from_millis(50));
 
     // Read the data from the socket.
-    let mut read_buffer: [u8; 1024] = [0; 1024];
-    let bytes_received = tcp_stream
-        .read(&mut read_buffer)
-        .expect("Failed to read data from the TWAMP Server ... ");
-
+    let bytes_received = tcp_stream.read(&mut buffer).expect("Failed to read data from the TWAMP Server ... ");
+    
     // Check if the bytes received are equal to TwampMessageAcceptSession size.
     if bytes_received != mem::size_of::<TwampMessageAcceptSession>() {
-        return Err(
-            "Invalid TwampMessageAcceptSession size received from the TWAMP Server ... "
-                .to_string(),
-        );
+        return Err(format!("Invalid Twamp message accept session size received from the TWAMP Server ... "));
     }
 
     // Parse the TwampMessageAcceptSession from the bytes received.
-    let twamp_message_accept_session = TwampMessageAcceptSession::from_bytes(&read_buffer)
-        .expect("Failed to parse TwampMessageAcceptSession ... ");
+    let twamp_message_accept_session = TwampMessageAcceptSession::from_bytes(&buffer)
+        .expect("Failed to parse Twamp message accept session ... ");
 
     // Check if the TWAMP server accepted the session request.
     if twamp_message_accept_session.accept != 0 {
@@ -191,8 +169,8 @@ pub fn request_tw_session(tcp_stream: &mut TcpStream, local_ip: &Ipv4Addr) -> Re
     }
 
     // Print SID received from TWAMP server.
-    let sid = String::from_utf8(twamp_message_accept_session.sid.to_vec())
-        .expect("Failed to convert SID to string ... ");
+    let sid = String::from_utf8(twamp_message_accept_session.sid.to_vec()).expect("Failed to convert SID to string ... ");
+
     println!("Received SID from TWAMP Server: {sid}");
 
     Ok(twamp_message_accept_session.port)
@@ -210,7 +188,7 @@ pub fn start_session(
 ) -> Result<(), String> {
     // Check if tcp stream is connected.
     if !tcp_stream.peer_addr().is_ok() {
-        return Err("TCP Stream is not connected ... ".to_string());
+        return Err(format!("TCP connection with TWAMP server is not valid any more ... "));
     }
 
     // Create TwampMessageStartSession message and send it to TWAMP server.
@@ -230,37 +208,23 @@ pub fn start_session(
 
     // Send the TwampMessageStartSession to the TWAMP Server.
     let res = tcp_stream.write(&buffer[0..res.ok().unwrap()]);
-
-    // Perform match expression on write result. Return the error if write fails. Otherwise move forward.
-    match res {
-        Ok(_) => (),
-        Err(e) => {
-            return Err(format!(
-                "Failed to send TwampMessageStartSession to the TWAMP Server: {}",
-                e
-            ))
-        }
-    };
+    if res.is_err() {
+        return Err(format!("Failed to send Twamp message start sessions to the TWAMP Server: {}", res.err().unwrap()));
+    }
 
     // Wait for 50 ms before reading the data from socket.
     std::thread::sleep(Duration::from_millis(50));
 
     // Read the data from the socket.
-    let mut read_buffer: [u8; 1024] = [0; 1024];
-    let bytes_received = tcp_stream
-        .read(&mut read_buffer)
-        .expect("Failed to read data from the TWAMP Server ... ");
+    let bytes_received = tcp_stream.read(&mut buffer).expect("Failed to read data from the TWAMP Server ... ");
 
     // Check if the bytes received are equal to TwampMessageStartAck size.
     if bytes_received != mem::size_of::<TwampMessageStartAck>() {
-        return Err(
-            "Invalid TwampMessageStartAck size received from the TWAMP Server ... ".to_string(),
-        );
+        return Err(format!("Invalid Twamp message start ack size received from the TWAMP Server ... "));
     }
 
     // Parse the TwampMessageStartAck from the bytes received.
-    let twamp_message_start_ack = TwampMessageStartAck::from_bytes(&read_buffer)
-        .expect("Failed to parse TwampMessageStartAck ... ");
+    let twamp_message_start_ack = TwampMessageStartAck::from_bytes(&buffer).expect("Failed to parse TwampMessageStartAck ... ");
 
     // Check if the TWAMP server accepted the session start request.
     if twamp_message_start_ack.accept != 0 {
@@ -270,18 +234,9 @@ pub fn start_session(
     // Print the Start Session Acknowledgement received from TWAMP server.
     println!("Received Start Session Acknowledgement from TWAMP Server ... ");
 
-    let start_test_res = start_test(
-        local_ip,
-        remote_ip,
-        local_port,
-        remote_port,
-        number_of_packets,
-        packet_size,
-        interpacket_interval,
-    );
-    match start_test_res {
-        Ok(_) => (),
-        Err(e) => return Err(format!("Failed to start the TWAMP test: {}", e)),
+    let res = start_test(local_ip, remote_ip, local_port, remote_port, number_of_packets, packet_size, interpacket_interval);
+    if res.is_err() {
+        return Err(format!("Failed to start the TWAMP test: {}", res.err().unwrap()));
     }
 
     Ok(())
@@ -290,7 +245,7 @@ pub fn start_session(
 pub fn stop_session(tcp_stream: &mut TcpStream) -> Result<(), String> {
     // Check if tcp stream is connected.
     if !tcp_stream.peer_addr().is_ok() {
-        return Err("TCP Stream is not connected ... ".to_string());
+        return Err(format!("TCP connection with TWAMP server is not valid any more ... "));
     }
 
     let twamp_message_stop_sessions = TwampMessageStopSessions {
@@ -312,20 +267,11 @@ pub fn stop_session(tcp_stream: &mut TcpStream) -> Result<(), String> {
 
     // Send the TwampMessageStopSessions to the TWAMP Server.
     let res = tcp_stream.write(&buffer[0..res.ok().unwrap()]);
-
-    // Perform match expression on write result. Return the error if write fails. Otherwise move forward.
-    match res {
-        Ok(_) => (),
-        Err(e) => {
-            return Err(format!(
-                "Failed to send TwampMessageStopSessions to the TWAMP Server: {}",
-                e
-            ))
-        }
-    };
+    if res.is_err() {
+        return Err(format!("Failed to send TwampMessageStopSessions to the TWAMP Server: {}", res.err().unwrap()));
+    }
 
     println!("Sent Stop Session request to the TWAMP Server ... ");
-
     Ok(())
 }
 

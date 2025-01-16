@@ -2,7 +2,7 @@ use crate::twamp_defs::*;
 use rand::Rng;
 use std::{fmt::{format, write}, io::{prelude::*, ErrorKind}};
 
-pub fn send_message_to_client<T: Serialize>(message: &mut T, control_request: &mut ControlRequest,  buffer: &mut [u8]) -> Result<(), String> {
+pub fn send_twamp_control_message<T: Serialize>(message: &mut T, control_request: &mut ControlRequest,  buffer: &mut [u8]) -> Result<(), String> {
     let res = message.to_bytes(buffer);
     if res.is_err() {
         control_request.state = ControlRequestState::ConnectionInvalid;
@@ -26,7 +26,7 @@ pub fn send_message_to_client<T: Serialize>(message: &mut T, control_request: &m
     Ok(())
 }
 
-pub fn read_message_from_client<T: Deserialize>(control_request: &mut ControlRequest, rx_buffer: &mut [u8]) -> Result<Option<T>, String> {
+pub fn receive_twamp_control_message<T: Deserialize>(control_request: &mut ControlRequest, rx_buffer: &mut [u8]) -> Result<Option<T>, String> {
     // Try to receive a message from client.
     let res = control_request.tcp_stream.read(rx_buffer);
     if res.is_err() {
@@ -114,28 +114,9 @@ pub fn handle_client(
 
             server_greeting_message.modes[3] = control_request.twamp_control_mode as u8;
 
-            let res = server_greeting_message.to_bytes(buffer);
+            let res = send_twamp_control_message(&mut server_greeting_message, control_request, buffer);
             if res.is_err() {
-                control_request.state = ControlRequestState::ConnectionInvalid;
-                return Err(format!(
-                    "Unable to convert TWAMP server greeting message to bytes: {}",
-                    res.err().unwrap()
-                ));
-            }
-
-            let write_size = res.ok().unwrap();
-
-            let res = control_request.tcp_stream.write(&buffer[0..write_size]);            
-            if res.is_err() {
-                control_request.state = ControlRequestState::ConnectionInvalid;
-                return Err(format!(
-                    "Unable to send TWAMP server greeting message to client. Error: {}",
-                    res.err().unwrap()
-                ));
-            }
-
-            if res.ok().unwrap() != write_size {
-                panic!("Unable to send complete TWAMP message to client ... ");
+                return Err(format!("{}", res.err().unwrap()));                
             }
 
             control_request.state = ControlRequestState::GreetingMessageSent;
@@ -143,7 +124,7 @@ pub fn handle_client(
         }
         ControlRequestState::GreetingMessageSent => {
             // Try to receive TWAMP message setup response from client.
-            let res = read_message_from_client::<TwampMessageSetupResponse>(control_request, buffer);
+            let res = receive_twamp_control_message::<TwampMessageSetupResponse>(control_request, buffer);
             if res.is_err() {
                 return Err(res.err().unwrap());
             }
@@ -179,9 +160,9 @@ pub fn handle_client(
                 mbz_: [0; 8],
             };
 
-            let res = send_message_to_client::<TwampMessageServerStart>(&mut twamp_message_server_start, control_request, buffer);
+            let res = send_twamp_control_message::<TwampMessageServerStart>(&mut twamp_message_server_start, control_request, buffer);
             if res.is_err() {
-                return Err(format!("{}", res.err().unwrap()));                
+                return Err(format!("{}", res.err().unwrap()));
             }
 
             control_request.state = ControlRequestState::ControlConnectionSetupComplete;
@@ -202,7 +183,7 @@ pub fn handle_client(
             let first_octet = buffer[0];
 
             if first_octet == TwampControlPacketType::RequestSession as u8 {
-                let res = read_message_from_client::<TwampMessageRequestSession>(control_request, buffer);
+                let res = receive_twamp_control_message::<TwampMessageRequestSession>(control_request, buffer);
                 if res.is_err() {
                     return Err(res.err().unwrap());
                 }
@@ -248,14 +229,14 @@ pub fn handle_client(
                     accept_session_message.sid[0..sid.len()].copy_from_slice(sid.as_bytes());
                 }
 
-                let res = send_message_to_client(&mut accept_session_message, control_request, buffer);
+                let res = send_twamp_control_message(&mut accept_session_message, control_request, buffer);
                 if res.is_err() {
-                    return Err(format!("{}", res.err().unwrap()));                
+                    return Err(format!("{}", res.err().unwrap()));
                 }
 
                 println!("TWAMP accept session message sent to client ... ");
             } else if first_octet == TwampControlPacketType::StartSession as u8 {
-                let res = read_message_from_client::<TwampMessageStartSessions>(control_request, buffer);
+                let res = receive_twamp_control_message::<TwampMessageStartSessions>(control_request, buffer);
                 if res.is_err() {
                     return Err(res.err().unwrap());
                 }
@@ -266,8 +247,6 @@ pub fn handle_client(
                     return Ok(());
                 }
 
-                let res = res.unwrap();
-
                 // Send message start ack to client.
                 let mut twamp_message_start_ack = TwampMessageStartAck {
                     accept: AcceptValue::Ok as u8,
@@ -275,14 +254,14 @@ pub fn handle_client(
                     hwmac: [0; 16],
                 };
 
-                let res = send_message_to_client(&mut twamp_message_start_ack, control_request, buffer);
+                let res = send_twamp_control_message(&mut twamp_message_start_ack, control_request, buffer);
                 if res.is_err() {
                     return Err(format!("{}", res.err().unwrap()));                
                 }
 
                 println!("TWAMP message start ack sent to client ... ");
             } else if first_octet == TwampControlPacketType::StopSession as u8 {
-                let res = read_message_from_client::<TwampMessageStopSessions>(control_request, buffer);
+                let res = receive_twamp_control_message::<TwampMessageStopSessions>(control_request, buffer);
                 if res.is_err() {
                     return Err(res.err().unwrap());
                 }

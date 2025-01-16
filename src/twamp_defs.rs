@@ -11,8 +11,8 @@ pub const TWAMP_TEST_PACKET_RX_WAIT_TIME_MS: u16 = 5000;   // Waiting for test p
 pub const RX_BUFFER_SIZE: usize = 256;                     // Size of local buffer to receive messages.
 pub const TX_BUFFER_SIZE: usize = 256;                     // Size of local buffer to transmit messages.
 
-pub const SERIALIZATION_ERROR_MSG: &str = "Buffer size is smaller than structure length.";
-pub const DESERIALIZATION_ERROR_MSG: &str = "Buffer size is smaller than structure length.";
+pub const SERIALIZATION_ERROR_MSG: &str = "Buffer size is smaller than structure length. Cannot Serialize. ";
+pub const DESERIALIZATION_ERROR_MSG: &str = "Buffer size is smaller than structure length. Cannot Deserialize. ";
 
 pub trait Serialize {
     fn to_bytes(&self, bytes: &mut [u8]) -> Result<usize, String>;
@@ -32,11 +32,10 @@ pub struct TwampMessageServerGreeting {
     pub mbz: [u8; 12]
 }
 
-impl TwampMessageServerGreeting {    
-    // Method to parse bytes into TwampMessageServerGreeting
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
-        if bytes.len() < mem::size_of::<TwampMessageServerGreeting>() {
-            return Err("Invalid bytes array length. ".to_string());
+impl Deserialize for TwampMessageServerGreeting {    
+    fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+        if bytes.len() < std::mem::size_of::<TwampMessageServerGreeting>() {
+            return Err(format!("{}", DESERIALIZATION_ERROR_MSG));
         }
 
         Ok(Self {
@@ -48,10 +47,12 @@ impl TwampMessageServerGreeting {
             mbz: bytes[52..64].try_into().unwrap(),
         })
     }
+}
 
-    pub fn to_bytes(&self, bytes: &mut [u8]) -> Result<usize, String> {
+impl Serialize for TwampMessageServerGreeting {
+    fn to_bytes(&self, bytes: &mut [u8]) -> Result<usize, String> {
         if bytes.len() < std::mem::size_of::<TwampMessageServerGreeting>() {
-            return Err(format!("Buffer size is smaller than structure length. "));
+            return Err(format!("{}", SERIALIZATION_ERROR_MSG));
         }
         
         bytes[0..12].copy_from_slice(&self.unused);
@@ -73,22 +74,10 @@ pub struct TwampMessageSetupResponse {
     pub client_iv: [u8; 16]
 }
 
-impl TwampMessageSetupResponse {
-    // Method to convert TwampMessageSetupResponse into a byte array.
-    pub fn to_bytes(&self) -> [u8; std::mem::size_of::<TwampMessageSetupResponse>()] {
-        let mut bytes = [0u8; std::mem::size_of::<TwampMessageSetupResponse>()];
-        bytes[0..4].copy_from_slice(&self.mode);
-        bytes[4..84].copy_from_slice(&self.key_id);
-        bytes[84..148].copy_from_slice(&self.token);
-        bytes[148..164].copy_from_slice(&self.client_iv);
-        bytes
-    }
-}
-
 impl Deserialize for TwampMessageSetupResponse {
     fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
-        if bytes.len() < mem::size_of::<TwampMessageSetupResponse>() {
-            return Err("Buffer length is less then structure size. ".to_string());
+        if bytes.len() < std::mem::size_of::<TwampMessageSetupResponse>() {
+            return Err(format!("{}", DESERIALIZATION_ERROR_MSG));
         }
 
         Ok(Self {
@@ -97,6 +86,21 @@ impl Deserialize for TwampMessageSetupResponse {
             token: bytes[84..148].try_into().unwrap(),
             client_iv: bytes[148..164].try_into().unwrap()
         })
+    }
+}
+
+impl Serialize for TwampMessageSetupResponse {
+    fn to_bytes(&self, bytes: &mut [u8]) -> Result<usize, String> {
+        if bytes.len() < std::mem::size_of::<TwampMessageSetupResponse>() {
+            return Err(format!("{}", SERIALIZATION_ERROR_MSG));
+        }
+
+        bytes[0..4].copy_from_slice(&self.mode);
+        bytes[4..84].copy_from_slice(&self.key_id);
+        bytes[84..148].copy_from_slice(&self.token);
+        bytes[148..164].copy_from_slice(&self.client_iv);
+
+        Ok(std::mem::size_of::<TwampMessageSetupResponse>())
     }
 }
 
@@ -124,24 +128,6 @@ impl TwampTime {
         }
     }
 
-    pub fn to_bytes(&self) -> [u8; 8] {
-        let mut bytes = [0u8; 8];
-        bytes[0..4].copy_from_slice(&self.seconds.to_be_bytes());
-        bytes[4..8].copy_from_slice(&self.fraction.to_be_bytes());
-        bytes
-    }
-
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
-        if bytes.len() < std::mem::size_of::<TwampTime>() {
-            return Err("Invalid bytes array length. ".to_string());
-        }
-
-        Ok(Self {
-            seconds: u32::from_be_bytes(bytes[0..4].try_into().unwrap()),
-            fraction: u32::from_be_bytes(bytes[4..8].try_into().unwrap()),
-        })
-    }
-
     pub fn convert_twamp_time_to_epoch_time(&self) -> i64 {
         if self.seconds < 2208988800 {
             return 0;
@@ -150,6 +136,32 @@ impl TwampTime {
         let mut res: i64 = (self.seconds - 2208988800) as i64 * 1000;           // Convert seconds to milliseconds.
         res += ((self.fraction as f32 / u32::MAX as f32) * 1000 as f32) as i64; // Convert fraction to milliseconds.
         res
+    }
+}
+
+impl Deserialize for TwampTime {
+    fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+        if bytes.len() < std::mem::size_of::<TwampTime>() {
+            return Err(format!("{}", DESERIALIZATION_ERROR_MSG));
+        }
+
+        Ok(Self {
+            seconds: u32::from_be_bytes(bytes[0..4].try_into().unwrap()),
+            fraction: u32::from_be_bytes(bytes[4..8].try_into().unwrap()),
+        })
+    }
+}
+
+impl Serialize for TwampTime {
+    fn to_bytes(&self, bytes: &mut [u8]) -> Result<usize, String> {
+        if bytes.len() < std::mem::size_of::<TwampTime>() {
+            return Err(format!("{}", SERIALIZATION_ERROR_MSG));
+        }
+
+        bytes[0..4].copy_from_slice(&self.seconds.to_be_bytes());
+        bytes[4..8].copy_from_slice(&self.fraction.to_be_bytes());
+
+        Ok(std::mem::size_of::<TwampTime>())
     }
 }
 
@@ -162,19 +174,17 @@ pub struct TwampMessageServerStart {
     pub mbz_: [u8; 8]
 }
 
-impl TwampMessageServerStart {    
-    // Method to parse bytes into TwampMessageServerStart
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+impl Deserialize for TwampMessageServerStart {    
+    fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
         if bytes.len() < mem::size_of::<TwampMessageServerStart>() {
-            return Err("Invalid bytes array length. ".to_string());
+            return Err(format!("{}", DESERIALIZATION_ERROR_MSG));
         }
 
         Ok(Self {
             mbz: bytes[0..15].try_into().unwrap(),
             accept: bytes[15],
             server_iv: bytes[16..32].try_into().unwrap(),
-            start_time: TwampTime::create_instance(u32::from_be_bytes(bytes[32..36].try_into().unwrap()),
-                                                  u32::from_be_bytes(bytes[36..40].try_into().unwrap())),
+            start_time: TwampTime::from_bytes(&bytes[32..40]).unwrap(),
             mbz_: bytes[40..48].try_into().unwrap(),
         })
     }
@@ -183,13 +193,13 @@ impl TwampMessageServerStart {
 impl Serialize for TwampMessageServerStart {
     fn to_bytes(&self, bytes: &mut [u8]) -> Result<usize, String> {
         if bytes.len() < std::mem::size_of::<TwampMessageServerStart>() {
-            return Err(format!("Buffer size is smaller than structure length. "));
+            return Err(format!("{}", SERIALIZATION_ERROR_MSG));
         }
 
         bytes[0..15].copy_from_slice(&self.mbz);
         bytes[15] = self.accept;
         bytes[16..32].copy_from_slice(&self.server_iv);
-        bytes[32..40].copy_from_slice(&self.start_time.to_bytes());
+        self.start_time.to_bytes(&mut bytes[32..40]);
         bytes[40..48].copy_from_slice(&self.mbz_);
 
         Ok(std::mem::size_of::<TwampMessageServerStart>())
@@ -216,6 +226,40 @@ pub struct TwampMessageRequestSession {
     pub hwmac: [u8; 16]
 }
 
+impl Deserialize for TwampMessageRequestSession {
+    fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
+        if bytes.len() < mem::size_of::<TwampMessageRequestSession>() {
+            return Err(format!("{}", DESERIALIZATION_ERROR_MSG));
+        }
+
+        Ok(Self {
+            first_octet: bytes[0],
+            ipvn_mbz: bytes[1],
+            conf_sender: bytes[2],
+            conf_receiver: bytes[3],
+            schedule_slots: u32::from_be_bytes(bytes[4..8].try_into().unwrap()),
+            packets: u32::from_be_bytes(bytes[8..12].try_into().unwrap()),
+            sender_port: u16::from_be_bytes(bytes[12..14].try_into().unwrap()),
+            receiver_port: u16::from_be_bytes(bytes[14..16].try_into().unwrap()),
+            sender_address: [u32::from_be_bytes(bytes[16..20].try_into().unwrap()),
+                             u32::from_be_bytes(bytes[20..24].try_into().unwrap()),
+                             u32::from_be_bytes(bytes[24..28].try_into().unwrap()),
+                             u32::from_be_bytes(bytes[28..32].try_into().unwrap())],
+            receiver_address: [u32::from_be_bytes(bytes[32..36].try_into().unwrap()),
+                               u32::from_be_bytes(bytes[36..40].try_into().unwrap()),
+                               u32::from_be_bytes(bytes[40..44].try_into().unwrap()),
+                               u32::from_be_bytes(bytes[44..48].try_into().unwrap())],
+            sid: bytes[48..64].try_into().unwrap(),
+            padding_length: u32::from_be_bytes(bytes[64..68].try_into().unwrap()),
+            start_time: TwampTime::from_bytes(bytes[68..76].try_into().unwrap()).unwrap(),
+            timeout: TwampTime::from_bytes(bytes[76..84].try_into().unwrap()).unwrap(),
+            type_p_descriptor: u32::from_be_bytes(bytes[84..88].try_into().unwrap()),
+            mbz_: bytes[88..96].try_into().unwrap(),
+            hwmac: bytes[96..112].try_into().unwrap()
+        })
+    }
+}
+
 impl Serialize for TwampMessageRequestSession {
     fn to_bytes(&self, bytes: &mut [u8]) -> Result<usize, String> {
         if bytes.len() < mem::size_of::<TwampMessageRequestSession>() {
@@ -240,47 +284,13 @@ impl Serialize for TwampMessageRequestSession {
         bytes[44..48].copy_from_slice(&self.receiver_address[3].to_be_bytes());
         bytes[48..64].copy_from_slice(&self.sid);
         bytes[64..68].copy_from_slice(&self.padding_length.to_be_bytes());
-        bytes[68..76].copy_from_slice(&self.start_time.to_bytes());
-        bytes[76..84].copy_from_slice(&self.timeout.to_bytes());
+        self.start_time.to_bytes(&mut bytes[68..76]);
+        self.timeout.to_bytes(&mut bytes[76..84]);
         bytes[84..88].copy_from_slice(&self.type_p_descriptor.to_be_bytes());
         bytes[88..96].copy_from_slice(&self.mbz_);
         bytes[96..112].copy_from_slice(&self.hwmac);
 
         Ok(mem::size_of::<TwampMessageRequestSession>())
-    }
-}
-
-impl Deserialize for TwampMessageRequestSession {
-    fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
-        if bytes.len() < mem::size_of::<TwampMessageRequestSession>() {
-            return Err(format!("{}", DESERIALIZATION_ERROR_MSG));
-        }
-
-        Ok(Self {
-            first_octet: bytes[0],
-            ipvn_mbz: bytes[1],
-            conf_sender: bytes[2],
-            conf_receiver: bytes[3],
-            schedule_slots: u32::from_be_bytes(bytes[4..8].try_into().unwrap()),
-            packets: u32::from_be_bytes(bytes[8..12].try_into().unwrap()),
-            sender_port: u16::from_be_bytes(bytes[12..14].try_into().unwrap()),
-            receiver_port: u16::from_be_bytes(bytes[14..16].try_into().unwrap()),
-            sender_address: [u32::from_be_bytes(bytes[16..20].try_into().unwrap()), 
-                             u32::from_be_bytes(bytes[20..24].try_into().unwrap()),
-                             u32::from_be_bytes(bytes[24..28].try_into().unwrap()),
-                             u32::from_be_bytes(bytes[28..32].try_into().unwrap())],
-            receiver_address: [u32::from_be_bytes(bytes[32..36].try_into().unwrap()),
-                               u32::from_be_bytes(bytes[36..40].try_into().unwrap()),
-                               u32::from_be_bytes(bytes[40..44].try_into().unwrap()),
-                               u32::from_be_bytes(bytes[44..48].try_into().unwrap())],
-            sid: bytes[48..64].try_into().unwrap(),
-            padding_length: u32::from_be_bytes(bytes[64..68].try_into().unwrap()),
-            start_time: TwampTime::from_bytes(bytes[68..76].try_into().unwrap()).unwrap(),
-            timeout: TwampTime::from_bytes(bytes[76..84].try_into().unwrap()).unwrap(),
-            type_p_descriptor: u32::from_be_bytes(bytes[84..88].try_into().unwrap()),
-            mbz_: bytes[88..96].try_into().unwrap(),
-            hwmac: bytes[96..112].try_into().unwrap()
-        })
     }
 }
 
@@ -334,19 +344,6 @@ pub struct TwampMessageStartSessions {
     pub hwmac: [u8; 16]
 }
 
-impl Serialize for TwampMessageStartSessions {
-    fn to_bytes(&self, bytes: &mut [u8]) -> Result<usize, String> {
-        if bytes.len() < std::mem::size_of::<TwampMessageStartSessions>() {
-            return Err(format!("{}", SERIALIZATION_ERROR_MSG));
-        }
-
-        bytes[0] = self.first_octet;
-        bytes[1..16].copy_from_slice(&self.mbz);
-        bytes[16..32].copy_from_slice(&self.hwmac);
-        Ok(std::mem::size_of::<TwampMessageStartSessions>())
-    }
-}
-
 impl Deserialize for TwampMessageStartSessions {
     fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
         if bytes.len() < std::mem::size_of::<TwampMessageStartSessions>() {
@@ -361,6 +358,18 @@ impl Deserialize for TwampMessageStartSessions {
     }
 }
 
+impl Serialize for TwampMessageStartSessions {
+    fn to_bytes(&self, bytes: &mut [u8]) -> Result<usize, String> {
+        if bytes.len() < std::mem::size_of::<TwampMessageStartSessions>() {
+            return Err(format!("{}", SERIALIZATION_ERROR_MSG));
+        }
+
+        bytes[0] = self.first_octet;
+        bytes[1..16].copy_from_slice(&self.mbz);
+        bytes[16..32].copy_from_slice(&self.hwmac);
+        Ok(std::mem::size_of::<TwampMessageStartSessions>())
+    }
+}
 
 pub struct TwampMessageStartAck {
     pub accept: u8,
@@ -406,22 +415,6 @@ pub struct TwampMessageStopSessions {
     pub hwmac: [u8; 16]
 }
 
-impl Serialize for TwampMessageStopSessions {
-    fn to_bytes(&self, bytes: &mut [u8]) -> Result<usize, String> {
-        if bytes.len() < std::mem::size_of::<TwampMessageStopSessions>() {
-            return Err(format!("{}", SERIALIZATION_ERROR_MSG));
-        }
-
-        bytes[0] = self.first_octet;
-        bytes[1] = self.accept;
-        bytes[2..4].copy_from_slice(&self.mbz);
-        bytes[4..8].copy_from_slice(&self.number_of_sessions.to_be_bytes());
-        bytes[8..16].copy_from_slice(&self.mbz_);
-        bytes[16..32].copy_from_slice(&self.hwmac);
-        Ok(std::mem::size_of::<TwampMessageStopSessions>())
-    }
-}
-
 impl Deserialize for TwampMessageStopSessions {
     fn from_bytes(bytes: &[u8]) -> Result<Self, String> {
         if bytes.len() < std::mem::size_of::<TwampMessageStopSessions>() {
@@ -438,6 +431,24 @@ impl Deserialize for TwampMessageStopSessions {
         })
     }
 }
+
+impl Serialize for TwampMessageStopSessions {
+    fn to_bytes(&self, bytes: &mut [u8]) -> Result<usize, String> {
+        if bytes.len() < std::mem::size_of::<TwampMessageStopSessions>() {
+            return Err(format!("{}", SERIALIZATION_ERROR_MSG));
+        }
+
+        bytes[0] = self.first_octet;
+        bytes[1] = self.accept;
+        bytes[2..4].copy_from_slice(&self.mbz);
+        bytes[4..8].copy_from_slice(&self.number_of_sessions.to_be_bytes());
+        bytes[8..16].copy_from_slice(&self.mbz_);
+        bytes[16..32].copy_from_slice(&self.hwmac);
+
+        Ok(std::mem::size_of::<TwampMessageStopSessions>())
+    }
+}
+
 
 pub struct TwampTestResult {
     pub min_dlt: f64,
@@ -496,7 +507,7 @@ pub struct TwampMessageTest {
 impl TwampMessageTest {
     pub fn to_bytes(&self, bytes: &mut [u8; TWAMP_MAX_TEST_PACKET_SIZE as usize]) {
         bytes[0..4].copy_from_slice(&self.sequence_number.to_be_bytes());
-        bytes[4..12].copy_from_slice(&self.timestamp.to_bytes());
+        self.timestamp.to_bytes(&mut bytes[4..12]);
         bytes[12..14].copy_from_slice(&self.error_estimate.to_bytes());
     }
 }
